@@ -1,0 +1,66 @@
+name: Sync and Clean base64.txt
+
+on:
+  schedule:
+    # 每30分钟检查一次上游更新，可自行调整
+    - cron: '*/30 * * * *'
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  sync-and-clean:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 检出自己的仓库
+      - name: Checkout my repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      # 2. 配置 Git 用户信息
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # 3. 添加上游仓库并拉取最新内容
+      - name: Add upstream and fetch
+        run: |
+          # ↓↓↓ 把这里替换成上游仓库的实际地址 ↓↓↓
+          git remote add upstream https://github.com/shaoyouvip/free.git || true
+          git fetch upstream
+
+      # 4. 获取上游的 base64.txt 文件
+      - name: Get upstream base64.txt
+        run: |
+          # ↓↓↓ 如果上游默认分支不是 main，改成 master 或其他 ↓↓↓
+          git checkout upstream/main -- base64.txt
+
+      # 5. 清除末尾的 # 时间戳注释行
+      - name: Remove trailing timestamp comment
+        run: |
+          # 删除文件末尾所有以 # 开头的行（从底部连续匹配）
+          # 方法：反转文件 → 删除开头连续的#行 → 再反转回来
+          tac base64.txt | sed '/^[[:space:]]*#/{ /^[[:space:]]*$/!d; }' | \
+            awk 'BEGIN{skip=1} {if(skip && /^[[:space:]]*$/){next} else {skip=0; print}}' | \
+            tac > base64_clean.txt
+
+          mv base64_clean.txt base64.txt
+
+          # 同时去除可能的末尾空行
+          sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' base64.txt
+
+          echo "=== Cleaned file tail (last 3 lines) ==="
+          tail -3 base64.txt
+
+      # 6. 如果有变化，提交并推送
+      - name: Commit and push if changed
+        run: |
+          if git diff --quiet base64.txt; then
+            echo "No changes detected, skipping commit."
+          else
+            git add base64.txt
+            git commit -m "Sync from upstream and remove timestamp - $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            git push origin main
+          fi
