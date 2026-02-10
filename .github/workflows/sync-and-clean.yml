@@ -59,6 +59,7 @@ jobs:
       # 6. 如果有变化，提交并推送
       - name: Commit and push if changed
         run: |
+          git add base64.txt
           if git diff --cached --quiet HEAD -- base64.txt; then
             echo "No changes detected, skipping commit."
           else
